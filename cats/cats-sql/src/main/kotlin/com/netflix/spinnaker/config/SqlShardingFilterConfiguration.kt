@@ -18,10 +18,11 @@
 package com.netflix.spinnaker.config
 
 import com.netflix.spinnaker.cats.cluster.DefaultNodeIdentity
+import com.netflix.spinnaker.cats.cluster.NodeIdentity
 import com.netflix.spinnaker.cats.sql.cluster.SqlCachingPodsObserver
-import com.netflix.spinnaker.kork.dynamicconfig.DynamicConfigService
 import org.jooq.DSLContext
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -35,19 +36,18 @@ class SqlShardingFilterConfiguration {
     value = [
       "sql.enabled",
       "sql.scheduler.enabled",
-      "cache-sharding.enabled"
+      "caching.sharding-enabled"
     ]
   )
   fun shardingFilter(
     jooq: DSLContext,
     @Value("\${sql.table-namespace:#{null}}") tableNamespace: String?,
-    dynamicConfigService: DynamicConfigService
-  ): SqlCachingPodsObserver {
+    sqlAgentProperties: SqlAgentProperties): SqlCachingPodsObserver {
     return SqlCachingPodsObserver(
       jooq = jooq,
       nodeIdentity = DefaultNodeIdentity(),
       tableNamespace = tableNamespace,
-      dynamicConfigService = dynamicConfigService
+      liveReplicasRecheckIntervalSeconds = sqlAgentProperties.poll.intervalSeconds
     )
   }
 

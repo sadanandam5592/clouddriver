@@ -41,7 +41,7 @@ class SqlCachingPodsObserver (
   private val jooq: DSLContext,
   private val nodeIdentity: NodeIdentity,
   private val tableNamespace: String? = null,
-  private val dynamicConfigService : DynamicConfigService,
+  private val liveReplicasRecheckIntervalSeconds : Long? = null,
   private val liveReplicasScheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(
     ThreadFactoryBuilder().setNameFormat(SqlCachingPodsObserver::class.java.simpleName + "-%d").build()
   )
@@ -69,9 +69,8 @@ class SqlCachingPodsObserver (
         SqlUtil.createTableLike(jooq, replicasTable, replicasReferenceTable)
       }
     }
-    refreshHeartbeat(TimeUnit.SECONDS.toMillis(ttlSeconds))
-    val recheckInterval =
-      dynamicConfigService.getConfig(Long::class.java, "cache-sharding.heartbeat-interval-seconds", 30)
+    refreshHeartbeat(TimeUnit.SECONDS.toMillis(60))
+    val recheckInterval = liveReplicasRecheckIntervalSeconds ?: 30L
     liveReplicasScheduler.scheduleAtFixedRate(this, 0, recheckInterval, TimeUnit.SECONDS)
     log.info("Account based sharding across caching pods is enabled.")
   }
