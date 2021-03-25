@@ -191,4 +191,10 @@ class SqlCacheConfiguration {
   fun nodeStatusProvider(discoveryStatusListener: DiscoveryStatusListener): NodeStatusProvider {
     return DiscoveryStatusNodeStatusProvider(discoveryStatusListener)
   }
+
+  @Bean
+  @ConditionalOnMissingBean(ShardingFilter::class)
+  fun shardingFilter() : ShardingFilter {
+    return NoopShardingFilter()
+  }
 }
