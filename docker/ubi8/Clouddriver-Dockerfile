@@ -43,4 +43,4 @@ RUN mkdir -p /opt/clouddriver/plugins
 
 USER spinnaker
 
-CMD ["sleep","30s" && "/opt/clouddriver/bin/clouddriver"]
+CMD ["/opt/clouddriver/bin/clouddriver"]
