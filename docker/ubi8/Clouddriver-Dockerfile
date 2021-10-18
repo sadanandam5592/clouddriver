@@ -11,7 +11,7 @@ COPY clouddriver-web/build/install/clouddriver /opt/clouddriver
 
 ENV KUBECTL_VERSION v1.22.0
 
-RUN yum -y install bash unzip wget unzip procps java-11-openjdk java-11-openjdk-devel.x86_64 python2 vim  net-tools curl && \
+RUN yum -y install bash unzip wget unzip procps java-11-openjdk java-11-openjdk-devel.x86_64 python2 vim  net-tools curl git && \
   wget -nv https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.zip && \
   unzip -qq google-cloud-sdk.zip -d /opt && \
   rm google-cloud-sdk.zip && \
@@ -32,6 +32,7 @@ RUN yum -y install python2-pip && \
   pip2 install --upgrade awscli==1.16.258 s3cmd==2.0.1 python-magic && \
   yum -y remove python2-pip && \
   yum clean all
+  
 
 ENV PATH "$PATH:/usr/local/bin/"
 
