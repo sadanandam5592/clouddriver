@@ -57,13 +57,15 @@ class ScaleCloudFoundryServerGroupAtomicOperationConverterTest {
           "password",
           "environment",
           false,
+          false,
           500,
           cacheRepository,
           null,
           ForkJoinPool.commonPool(),
           emptyMap(),
           new OkHttpClient(),
-          new CloudFoundryConfigurationProperties.ClientConfig()) {
+          new CloudFoundryConfigurationProperties.ClientConfig(),
+          new CloudFoundryConfigurationProperties.LocalCacheConfig()) {
         public CloudFoundryClient getClient() {
           return cloudFoundryClient;
         }

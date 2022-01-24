@@ -243,9 +243,11 @@ class HttpCloudFoundryClientTest {
         "password",
         false,
         true,
+        false,
         500,
         ForkJoinPool.commonPool(),
         new OkHttpClient.Builder(),
-        clientConfig);
+        clientConfig,
+        new CloudFoundryConfigurationProperties.LocalCacheConfig());
   }
 }

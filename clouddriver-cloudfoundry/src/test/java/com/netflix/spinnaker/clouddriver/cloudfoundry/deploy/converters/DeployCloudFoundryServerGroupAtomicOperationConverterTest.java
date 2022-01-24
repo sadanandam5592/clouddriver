@@ -33,6 +33,8 @@ import com.netflix.spinnaker.clouddriver.cloudfoundry.client.MockCloudFoundryCli
 import com.netflix.spinnaker.clouddriver.cloudfoundry.client.model.v3.ProcessRequest;
 import com.netflix.spinnaker.clouddriver.cloudfoundry.config.CloudFoundryConfigurationProperties;
 import com.netflix.spinnaker.clouddriver.cloudfoundry.deploy.description.DeployCloudFoundryServerGroupDescription;
+import com.netflix.spinnaker.clouddriver.cloudfoundry.model.CloudFoundryDomain;
+import com.netflix.spinnaker.clouddriver.cloudfoundry.model.CloudFoundryLoadBalancer;
 import com.netflix.spinnaker.clouddriver.cloudfoundry.model.CloudFoundryOrganization;
 import com.netflix.spinnaker.clouddriver.cloudfoundry.model.CloudFoundrySpace;
 import com.netflix.spinnaker.clouddriver.cloudfoundry.provider.CloudFoundryProvider;
@@ -80,6 +82,12 @@ class DeployCloudFoundryServerGroupAtomicOperationConverterTest {
 
       when(cloudFoundryClient.getApplications().findServerGroupId(any(), any()))
           .thenReturn("servergroup-id");
+
+      when(cloudFoundryClient.getDomains().getDefault())
+          .thenReturn(CloudFoundryDomain.builder().name("cf-app.com").build());
+      when(cloudFoundryClient.getRoutes().find(any(), any()))
+          .thenReturn(CloudFoundryLoadBalancer.builder().build())
+          .thenReturn(null);
     }
 
     return new CloudFoundryCredentials(
@@ -91,13 +99,15 @@ class DeployCloudFoundryServerGroupAtomicOperationConverterTest {
         "password",
         "environment",
         false,
+        false,
         500,
         cacheRepository,
         null,
         ForkJoinPool.commonPool(),
         emptyMap(),
         new OkHttpClient(),
-        new CloudFoundryConfigurationProperties.ClientConfig()) {
+        new CloudFoundryConfigurationProperties.ClientConfig(),
+        new CloudFoundryConfigurationProperties.LocalCacheConfig()) {
       public CloudFoundryClient getClient() {
         return cloudFoundryClient;
       }
@@ -130,7 +140,7 @@ class DeployCloudFoundryServerGroupAtomicOperationConverterTest {
 
   private final DeployCloudFoundryServerGroupAtomicOperationConverter converter =
       new DeployCloudFoundryServerGroupAtomicOperationConverter(
-          null, artifactCredentialsRepository, emptyList());
+          null, artifactCredentialsRepository, null);
 
   @BeforeEach
   void initializeClassUnderTest() {
@@ -240,7 +250,8 @@ class DeployCloudFoundryServerGroupAtomicOperationConverterTest {
             "credentials",
             "test",
             "manifest",
-            ImmutableList.of(ImmutableMap.of("applications", ImmutableList.of(ImmutableMap.of()))));
+            ImmutableList.of(
+                ImmutableMap.of("applications", List.of(Map.of("random-route", true)))));
 
     DeployCloudFoundryServerGroupDescription result = converter.convertDescription(description);
 
@@ -251,6 +262,7 @@ class DeployCloudFoundryServerGroupAtomicOperationConverterTest {
     assertThat(result.getApplicationArtifact().getArtifactAccount())
         .isEqualTo("destinationAccount");
     assertThat(result.getApplicationArtifact().getUuid()).isEqualTo("servergroup-id");
+    assertThat(result.getApplicationAttributes().getRoutes()).isNotEmpty();
   }
 
   @Test
@@ -274,5 +286,22 @@ class DeployCloudFoundryServerGroupAtomicOperationConverterTest {
                 .setProcesses(
                     List.of(
                         new ProcessRequest().setType("web").setInstances(2).setMemory("800M"))));
+  }
+
+  @Test
+  void convertRandomRoutes() {
+    DeployCloudFoundryServerGroupDescription.ApplicationAttributes applicationAttributes =
+        converter.convertManifest(
+            ImmutableMap.of("applications", List.of(Map.of("random-route", true))));
+
+    assertThat(applicationAttributes.getRandomRoute()).isTrue();
+  }
+
+  @Test
+  void convertTimeout() {
+    DeployCloudFoundryServerGroupDescription.ApplicationAttributes applicationAttributes =
+        converter.convertManifest(ImmutableMap.of("applications", List.of(Map.of("timeout", 60))));
+
+    assertThat(applicationAttributes.getTimeout() == 60);
   }
 }

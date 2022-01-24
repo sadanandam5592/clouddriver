@@ -220,7 +220,7 @@ class BasicAmazonDeployHandler implements DeployHandler<BasicAmazonDeployDescrip
           task.updateStatus(BASE_PHASE, "Attaching $classicLinkGroupNames as classicLinkVpcSecurityGroups")
         }
       }
-      
+
       ResolvedAmiResult ami = priorOutputs.find({
         it instanceof ResolvedAmiResult && it.region == region && (it.amiName == description.amiName || it.amiId == description.amiName)
       }) ?: AmiIdResolver.resolveAmiIdFromAllSources(amazonEC2, region, description.amiName, description.credentials.accountId)
@@ -228,7 +228,7 @@ class BasicAmazonDeployHandler implements DeployHandler<BasicAmazonDeployDescrip
       if (!ami) {
         throw new IllegalArgumentException("unable to resolve AMI imageId from $description.amiName in $region")
       }
-      InstanceTypeUtils.validateCompatibility(ami.virtualizationType, description.getAllInstanceTypes())
+      InstanceTypeUtils.validateCompatibilityWithAmi(amazonEC2, ami, description.getAllInstanceTypes())
 
       def account = accountCredentialsRepository.getOne(description.credentials.name)
       if (account == null) {
@@ -313,7 +313,8 @@ class BasicAmazonDeployHandler implements DeployHandler<BasicAmazonDeployDescrip
         onDemandPercentageAboveBaseCapacity: description.onDemandPercentageAboveBaseCapacity,
         spotAllocationStrategy: description.spotAllocationStrategy,
         spotInstancePools: description.spotInstancePools,
-        launchTemplateOverridesForInstanceType: description.launchTemplateOverridesForInstanceType
+        launchTemplateOverridesForInstanceType: description.launchTemplateOverridesForInstanceType,
+        capacityRebalance: description.capacityRebalance
       )
 
       def asgName = autoScalingWorker.deploy(asgConfig)
@@ -581,8 +582,6 @@ class BasicAmazonDeployHandler implements DeployHandler<BasicAmazonDeployDescrip
    * @param newAsgDescription description in request
    * @return a list of {@link AmazonBlockDevice} for the requested configuration
    */
-  @VisibleForTesting
-  @PackageScope
   List<AmazonBlockDevice> buildBlockDeviceMappingsFromSourceAsg(
     RegionScopedProviderFactory.RegionScopedProvider sourceAsgRegionScopedProvider,
     AutoScalingGroup sourceAsg,

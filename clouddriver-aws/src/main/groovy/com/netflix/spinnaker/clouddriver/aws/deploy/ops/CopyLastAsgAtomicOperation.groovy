@@ -18,6 +18,7 @@ package com.netflix.spinnaker.clouddriver.aws.deploy.ops
 
 import com.amazonaws.services.autoscaling.model.AutoScalingGroup
 import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest
+import com.amazonaws.services.autoscaling.model.DescribeLifecycleHooksRequest
 import com.amazonaws.services.autoscaling.model.LaunchTemplateSpecification
 import com.amazonaws.services.ec2.model.DescribeSubnetsRequest
 import com.amazonaws.services.ec2.model.LaunchTemplateVersion
@@ -31,6 +32,7 @@ import com.netflix.spinnaker.clouddriver.aws.deploy.handlers.BasicAmazonDeployHa
 import com.netflix.spinnaker.clouddriver.aws.deploy.InstanceTypeUtils
 import com.netflix.spinnaker.clouddriver.aws.deploy.userdata.LocalFileUserDataProperties
 import com.netflix.spinnaker.clouddriver.aws.deploy.validators.BasicAmazonDeployDescriptionValidator
+import com.netflix.spinnaker.clouddriver.aws.model.AmazonAsgLifecycleHook
 import com.netflix.spinnaker.clouddriver.aws.model.SubnetData
 import com.netflix.spinnaker.clouddriver.aws.security.AmazonClientProvider
 import com.netflix.spinnaker.clouddriver.aws.security.NetflixAmazonCredentials
@@ -206,14 +208,14 @@ class CopyLastAsgAtomicOperation implements AtomicOperation<DeploymentResult> {
           }
 
           if (isMip) {
-            def ancestorInstanceDiversification = ancestorAsg.mixedInstancesPolicy.instancesDistribution
-            newDescription.onDemandAllocationStrategy = description.onDemandAllocationStrategy != null ? description.onDemandAllocationStrategy : ancestorInstanceDiversification.onDemandAllocationStrategy
-            newDescription.onDemandBaseCapacity = description.onDemandBaseCapacity != null ? description.onDemandBaseCapacity : ancestorInstanceDiversification.onDemandBaseCapacity
-            newDescription.onDemandPercentageAboveBaseCapacity = description.onDemandPercentageAboveBaseCapacity != null ? description.onDemandPercentageAboveBaseCapacity : ancestorInstanceDiversification.onDemandPercentageAboveBaseCapacity
-            newDescription.spotAllocationStrategy = description.spotAllocationStrategy != null ? description.spotAllocationStrategy : ancestorInstanceDiversification.spotAllocationStrategy
+            def ancestorInstancesDistribution = ancestorAsg.mixedInstancesPolicy.instancesDistribution
+            newDescription.onDemandAllocationStrategy = description.onDemandAllocationStrategy != null ? description.onDemandAllocationStrategy : ancestorInstancesDistribution.onDemandAllocationStrategy
+            newDescription.onDemandBaseCapacity = description.onDemandBaseCapacity != null ? description.onDemandBaseCapacity : ancestorInstancesDistribution.onDemandBaseCapacity
+            newDescription.onDemandPercentageAboveBaseCapacity = description.onDemandPercentageAboveBaseCapacity != null ? description.onDemandPercentageAboveBaseCapacity : ancestorInstancesDistribution.onDemandPercentageAboveBaseCapacity
+            newDescription.spotAllocationStrategy = description.spotAllocationStrategy != null ? description.spotAllocationStrategy : ancestorInstancesDistribution.spotAllocationStrategy
             newDescription.spotInstancePools = description.spotInstancePools != null
               ? description.spotInstancePools
-              : newDescription.spotAllocationStrategy == "lowest-price" ? ancestorInstanceDiversification.spotInstancePools : null // return the spotInstancePools in ASG iff it is compatible with the spotAllocationStrategy
+              : newDescription.spotAllocationStrategy == "lowest-price" ? ancestorInstancesDistribution.spotInstancePools : null // return the spotInstancePools in ASG iff it is compatible with the spotAllocationStrategy
 
             newDescription.launchTemplateOverridesForInstanceType = description.launchTemplateOverridesForInstanceType != null && !description.launchTemplateOverridesForInstanceType.isEmpty()
               ? description.launchTemplateOverridesForInstanceType
@@ -275,10 +277,14 @@ class CopyLastAsgAtomicOperation implements AtomicOperation<DeploymentResult> {
         newDescription.ebsOptimized = description.ebsOptimized != null ? description.ebsOptimized : ebsOptimized
         newDescription.classicLinkVpcId = description.classicLinkVpcId != null ? description.classicLinkVpcId : classicLinkVPCId
         newDescription.classicLinkVpcSecurityGroups = description.classicLinkVpcSecurityGroups != null ? description.classicLinkVpcSecurityGroups : translateSecurityGroupIds(classicLinkVPCSecurityGroups)
-        newDescription.tags = description.tags != null ? description.tags : ancestorAsg.tags.collectEntries {
+        newDescription.tags = description.tags != null ? description.tags : ancestorAsg.tags?.collectEntries {
           [(it.getKey()): it.getValue()]
         }
-        newDescription.blockDevices
+        newDescription.blockDevices = description.blockDevices != null ? description.blockDevices : basicAmazonDeployHandler.buildBlockDeviceMappingsFromSourceAsg(sourceRegionScopedProvider, ancestorAsg, description)
+        newDescription.capacityRebalance = description.capacityRebalance != null ? description.capacityRebalance : ancestorAsg.capacityRebalance
+        newDescription.lifecycleHooks = description.lifecycleHooks != null && !description.lifecycleHooks.isEmpty()
+          ? description.lifecycleHooks
+          : getLifecycleHooksFromAncestor(sourceRegion, ancestorAsg.autoScalingGroupName, description)
 
         /*
           Copy over the ancestor user data only if the UserDataProviders behavior is disabled and no user data is provided
@@ -336,5 +342,24 @@ class CopyLastAsgAtomicOperation implements AtomicOperation<DeploymentResult> {
       return data.purpose
     }
     return null
+  }
+
+  private List<AmazonAsgLifecycleHook> getLifecycleHooksFromAncestor(String region, String ancestorAsgName, BasicAmazonDeployDescription description) {
+    def autoscaling = amazonClientProvider.getAutoScaling(description.credentials, region, true)
+    def result = autoscaling.describeLifecycleHooks(new DescribeLifecycleHooksRequest().withAutoScalingGroupName(ancestorAsgName))
+    if (result && result.lifecycleHooks) {
+      return result.lifecycleHooks
+        .stream()
+        .collect { new AmazonAsgLifecycleHook(
+          roleARN: it.roleARN,
+          notificationTargetARN: it.notificationTargetARN,
+          notificationMetadata: it.notificationMetadata,
+          lifecycleTransition: AmazonAsgLifecycleHook.Transition.valueOfName(it.lifecycleTransition),
+          heartbeatTimeout: it.heartbeatTimeout,
+          defaultResult: it.defaultResult)
+      }
+    }
+
+    return []
   }
 }

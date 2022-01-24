@@ -25,13 +25,13 @@ import com.google.common.collect.ImmutableMap;
 import com.netflix.spinnaker.clouddriver.kubernetes.it.utils.KubeTestUtils;
 import io.restassured.response.Response;
 import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import org.apache.logging.log4j.util.Strings;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.Container;
 
 public class DeployManifestIT extends BaseTest {
 
@@ -1108,36 +1108,6 @@ public class DeployManifestIT extends BaseTest {
     KubeTestUtils.disableManifest(baseUrl(), body, account1Ns, "replicaSet " + appName + "-v000");
 
     // ------------------------- then --------------------------
-    String port =
-        kubeCluster.execKubectl(
-            "-n "
-                + account1Ns
-                + " get service "
-                + SERVICE_1_NAME
-                + " -o=jsonpath='{.spec.ports[0].nodePort}'");
-    KubeTestUtils.repeatUntilTrue(
-        () -> {
-          try {
-            Container.ExecResult result =
-                kubeCluster.execInContainer("wget", "http://localhost:" + port, "-O", "-");
-            if (result.getExitCode() != 0) {
-              System.out.println(
-                  "Error running wget \"http://localhost:"
-                      + port
-                      + " -0 -\": Stdout: "
-                      + result.getStdout()
-                      + " Stderr: "
-                      + result.getStderr());
-            }
-            return result.getExitCode() == 0;
-          } catch (Exception e) {
-            fail("Failed executing \"wget http://localhost:" + port + "-O" + "-\" in container", e);
-            return false;
-          }
-        },
-        10,
-        TimeUnit.SECONDS,
-        "Error querying service with wget, waited 10 seconds.");
     List<String> podNames =
         Splitter.on(" ")
             .splitToList(
@@ -1212,36 +1182,6 @@ public class DeployManifestIT extends BaseTest {
     KubeTestUtils.disableManifest(baseUrl(), body, account1Ns, "replicaSet " + appName + "-v000");
 
     // ------------------------- then --------------------------
-    String port =
-        kubeCluster.execKubectl(
-            "-n "
-                + account1Ns
-                + " get service "
-                + SERVICE_1_NAME
-                + " -o=jsonpath='{.spec.ports[0].nodePort}'");
-    KubeTestUtils.repeatUntilTrue(
-        () -> {
-          try {
-            Container.ExecResult result =
-                kubeCluster.execInContainer("wget", "http://localhost:" + port, "-O", "-");
-            if (result.getExitCode() != 0) {
-              System.out.println(
-                  "Error running wget \"http://localhost:"
-                      + port
-                      + " -0 -\": Stdout: "
-                      + result.getStdout()
-                      + " Stderr: "
-                      + result.getStderr());
-            }
-            return result.getExitCode() == 0;
-          } catch (Exception e) {
-            fail("Failed executing \"wget http://localhost:" + port + "-O" + "-\" in container", e);
-            return false;
-          }
-        },
-        10,
-        TimeUnit.SECONDS,
-        "Error querying service with wget, waited 10 seconds.");
     List<String> podNames =
         Splitter.on(" ")
             .splitToList(
@@ -1252,5 +1192,58 @@ public class DeployManifestIT extends BaseTest {
                         + selectorValue));
     assertEquals(
         1, podNames.size(), "Only one pod expected to have the label for traffic selection");
+  }
+
+  @DisplayName(
+      ".\n===\n"
+          + "Given a cron job manifest without image tag\n"
+          + "  And required docker artifact present\n"
+          + "When sending cron job manifest request\n"
+          + "  And waiting on manifest stable\n"
+          + "Then the docker artifact is scheduled\n===")
+  @Test
+  public void shouldBindRequiredCronJobDockerImage() throws IOException, InterruptedException {
+    // ------------------------- given --------------------------
+    String appName = "bind-required";
+    System.out.println("> Using namespace: " + account1Ns + ", appName: " + appName);
+    String imageNoTag = "index.docker.io/library/alpine";
+    String imageWithTag = "index.docker.io/library/alpine:3.12";
+
+    List<Map<String, Object>> manifest =
+        KubeTestUtils.loadYaml("classpath:manifests/cronJob.yml")
+            .withValue("metadata.namespace", account1Ns)
+            .withValue("metadata.name", DEPLOYMENT_1_NAME)
+            .withValue("spec.jobTemplate.spec.template.spec.containers[0].image", imageNoTag)
+            .asList();
+    Map<String, Object> artifact =
+        KubeTestUtils.loadJson("classpath:requests/artifact.json")
+            .withValue("name", imageNoTag)
+            .withValue("type", "docker/image")
+            .withValue("reference", imageWithTag)
+            .withValue("version", imageWithTag.substring(imageNoTag.length() + 1))
+            .asMap();
+
+    // ------------------------- when --------------------------
+    List<Map<String, Object>> body =
+        KubeTestUtils.loadJson("classpath:requests/deploy_manifest.json")
+            .withValue("deployManifest.account", ACCOUNT1_NAME)
+            .withValue("deployManifest.moniker.app", appName)
+            .withValue("deployManifest.manifests", manifest)
+            .withValue("deployManifest.requiredArtifacts[0]", artifact)
+            .asList();
+    KubeTestUtils.deployAndWaitStable(baseUrl(), body, account1Ns, "cronJob " + DEPLOYMENT_1_NAME);
+
+    // ------------------------- then --------------------------
+    String imageDeployed =
+        kubeCluster.execKubectl(
+            "-n "
+                + account1Ns
+                + " get cronjobs "
+                + DEPLOYMENT_1_NAME
+                + " -o=jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}'");
+    assertEquals(
+        imageWithTag,
+        imageDeployed,
+        "Expected correct " + DEPLOYMENT_1_NAME + " image to be scheduled");
   }
 }
