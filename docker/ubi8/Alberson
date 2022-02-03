@@ -1,0 +1,15 @@
+FROM quay.io/opsmxpublic/ubi8-spin-clouddriver:7.2.1.jstackpsk8
+
+RUN mkdir -p /tmp/glowroot
+
+RUN chmod -R +x /tmp/glowroot
+
+# To profile the application
+COPY ./glowroot.jar /tmp/glowroot/glowroot.jar
+COPY lib /tmp/glowroot/lib
+#RUN chmod 777 -R /tmp/glowroot
+
+
+USER spinnaker 
+
+CMD  sleep 180s ; "/opt/clouddriver/bin/clouddriver"
